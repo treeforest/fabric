@@ -16,25 +16,25 @@ import (
 
 type emitBatchCallback func([]interface{})
 
-//batchingEmitter is used for the gossip push/forwarding phase.
-// Messages are added into the batchingEmitter, and they are forwarded periodically T times in batches and then discarded.
-// If the batchingEmitter's stored message count reaches a certain capacity, that also triggers a message dispatch
+// batchingEmitter 被用于gossip的推送或转发阶段
+// 消息被添加到batchingEmitter中，它们被周期性地分批转发T次，然后被丢弃。
+// 如果batchingEmitter存储的消息计数达到一定的容量，那么也会触发消息转发。
 type batchingEmitter interface {
-	// Add adds a message to be batched
+	// Add 添加要批处理的消息
 	Add(interface{})
 
-	// Stop stops the component
+	// Stop 停止组件
 	Stop()
 
-	// Size returns the amount of pending messages to be emitted
+	// Size 返回要转发的挂起消息的数量
 	Size() int
 }
 
-// newBatchingEmitter accepts the following parameters:
-// iterations: number of times each message is forwarded
-// burstSize: a threshold that triggers a forwarding because of message count
-// latency: the maximum delay that each message can be stored without being forwarded
-// cb: a callback that is called in order for the forwarding to take place
+// newBatchingEmitter 接受以下参数:
+// iterations: 每条消息被转发的次数
+// burstSize: 由于消息计数而触发转发的阈值
+// latency: 每条消息在不转发的情况下可以存储的最大延迟
+// cb: 为了进行转发而调用的回调
 func newBatchingEmitter(iterations, burstSize int, latency time.Duration, cb emitBatchCallback) batchingEmitter {
 	if iterations < 0 {
 		panic(errors.Errorf("Got a negative iterations number"))
@@ -57,6 +57,7 @@ func newBatchingEmitter(iterations, burstSize int, latency time.Duration, cb emi
 	return p
 }
 
+// periodicEmit 定时批处理累积的消息
 func (p *batchingEmitterImpl) periodicEmit() {
 	for !p.toDie() {
 		time.Sleep(p.delay)
@@ -100,10 +101,10 @@ func (p *batchingEmitterImpl) toDie() bool {
 }
 
 type batchingEmitterImpl struct {
-	iterations int
-	burstSize  int
-	delay      time.Duration
-	cb         emitBatchCallback
+	iterations int               // 消息转发的次数
+	burstSize  int               // 触发转发的阈值
+	delay      time.Duration     // 定时触发转发的时间
+	cb         emitBatchCallback // 进行转发而调用的回调
 	lock       *sync.Mutex
 	buff       []*batchedMessage
 	stopFlag   int32
@@ -111,7 +112,7 @@ type batchingEmitterImpl struct {
 
 type batchedMessage struct {
 	data           interface{}
-	iterationsLeft int
+	iterationsLeft int // 消息转发的剩余次数
 }
 
 func (p *batchingEmitterImpl) Stop() {
@@ -134,6 +135,7 @@ func (p *batchingEmitterImpl) Add(message interface{}) {
 	p.buff = append(p.buff, &batchedMessage{data: message, iterationsLeft: p.iterations})
 
 	if len(p.buff) >= p.burstSize {
+		// 达到触发转发的阈值，直接转发
 		p.emit()
 	}
 }
