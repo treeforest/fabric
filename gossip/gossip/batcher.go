@@ -106,7 +106,7 @@ type batchingEmitterImpl struct {
 	delay      time.Duration     // 定时触发转发的时间
 	cb         emitBatchCallback // 进行转发而调用的回调
 	lock       *sync.Mutex
-	buff       []*batchedMessage
+	buff       []*batchedMessage // 批处理消息
 	stopFlag   int32
 }
 

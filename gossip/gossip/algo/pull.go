@@ -26,10 +26,20 @@ import (
 
     Other peer				   			   Initiator
 	 O	<-------- Hello <NONCE> -------------------------	O
-	/|\	--------- Digest <[3,5,8, 10...], NONCE> -------->     /|\
-	 |	<-------- Request <[3,8], NONCE> -----------------      |
-	/ \	--------- Response <[item3, item8], NONCE>------->     / \
+	/|\	--------- Digest <[3,5,8, 10...], NONCE> --------> /|\
+	 |	<-------- Request <[3,8], NONCE> -----------------  |
+	/ \	--------- Response <[item3, item8], NONCE>-------> / \
 
+*/
+
+/* PullEngine 是一个基于gossip的pull执行对象，维护一个由字符串标识的元素的内部状态。
+其协议如下：
+1）发起者发送一个带有特定 NONCE 值的 Hello 消息给一组远端节点。
+2）每个远端节点都其消息摘要响应，并返回该 NONCE。
+3）发起者检查所有收到的 NONCE 的有效性，聚合所有摘要，并构造一个包含它希望从远
+	程节点获取的所有元素ID的请求包（request），然后将该请求包发送给对应节点。
+4）每个节点都返回一个包含请求元素的响应（response）。前提是，这些节点保留有所
+	请求元素的信息以及 NONCE 值。
 */
 
 const (
@@ -40,6 +50,7 @@ const (
 
 // DigestFilter filters digests to be sent to a remote peer that
 // sent a hello or a request, based on its messages's context
+// 筛选发送给远端节点的摘要。可能是hello或request摘要，具体根据消息的上下文判断。
 type DigestFilter func(context interface{}) func(digestItem string) bool
 
 // PullAdapter is needed by the PullEngine in order to
@@ -47,36 +58,47 @@ type DigestFilter func(context interface{}) func(digestItem string) bool
 // The PullEngine expects to be invoked with
 // OnHello, OnDigest, OnReq, OnRes when the respective message arrives
 // from a remote PullEngine
+// PullEngine 需要通过 PullAdapter 发送消息给远端 PullEngine 实例。
+// 当相应的消息从远端 PullEngine 到来时，PullEngine 将会调用OnHello,
+// OnDigest, OnReq, OnRes
 type PullAdapter interface {
 	// SelectPeers returns a slice of peers which the engine will initiate the protocol with
+	// 返回peer节点的切片，PullEngine将使用它来初始化协议
 	SelectPeers() []string
 
 	// Hello sends a hello message to initiate the protocol
 	// and returns an NONCE that is expected to be returned
 	// in the digest message.
+	// 发送一个Hello消息来初始化协议，并返回一个被期望在摘要
+	// 信息中返回的 NONCE 值
 	Hello(dest string, nonce uint64)
 
 	// SendDigest sends a digest to a remote PullEngine.
 	// The context parameter specifies the remote engine to send to.
+	// 发送一个摘要给远端PullEngine。
+	// context 参数指定要发送到的远端引擎。
 	SendDigest(digest []string, nonce uint64, context interface{})
 
 	// SendReq sends an array of items to a certain remote PullEngine identified
 	// by a string
+	// 发送 items 到一个由 dest 指定地址的远端 PullEngine
 	SendReq(dest string, items []string, nonce uint64)
 
 	// SendRes sends an array of items to a remote PullEngine identified by a context.
+	// 发送 items 到一个由 context 指定地址的远端 PullEngine
 	SendRes(items []string, context interface{}, nonce uint64)
 }
 
 // PullEngine is the component that actually invokes the pull algorithm
 // with the help of the PullAdapter
+// PullEngine 是通过PullAdapter的帮助实际调用pull算法的组件
 type PullEngine struct {
 	PullAdapter
 	stopFlag           int32
 	state              *util.Set
 	item2owners        map[string][]string
-	peers2nonces       map[string]uint64
-	nonces2peers       map[uint64]string
+	peers2nonces       map[string]uint64 // <endpoint, nonce> endpoint: 端点地址
+	nonces2peers       map[uint64]string // <nonce, endpoint>
 	acceptingDigests   int32
 	acceptingResponses int32
 	lock               sync.Mutex
