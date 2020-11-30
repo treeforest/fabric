@@ -51,13 +51,13 @@ type MembershipService interface {
 
 // Config defines the configuration of the pull mediator
 type Config struct {
-	ID                string
-	PullInterval      time.Duration // Duration between pull invocations
-	Channel           common.ChannelID
-	PeerCountToSelect int // Number of peers to initiate pull with
-	Tag               proto.GossipMessage_Tag
-	MsgType           proto.PullMsgType
-	PullEngineConfig  algo.PullEngineConfig
+	ID                string                  // 配置ID
+	PullInterval      time.Duration           // 拉取引擎pull间隔时间
+	Channel           common.ChannelID        // 链ID，在GossipMessage中填写
+	PeerCountToSelect int                     // 拉取引擎每次pull时选取的节点数
+	Tag               proto.GossipMessage_Tag // 消息标签，在GossipMessage中填写
+	MsgType           proto.PullMsgType       // 拉取的消息类型
+	PullEngineConfig  algo.PullEngineConfig   // 拉取引擎配置
 }
 
 // IngressDigestFilter filters out entities in digests that are received from remote peers
@@ -82,15 +82,14 @@ type MsgConsumer func(message *protoext.SignedGossipMessage)
 // IdentifierExtractor extracts from a SignedGossipMessage an identifier
 type IdentifierExtractor func(*protoext.SignedGossipMessage) string
 
-// PullAdapter defines methods of the pullStore to interact
-// with various modules of gossip
+// PullAdapter 定义pullStore与gossip的各个模块交互的方法
 type PullAdapter struct {
-	Sndr             Sender
-	MemSvc           MembershipService
-	IdExtractor      IdentifierExtractor
-	MsgCons          MsgConsumer
-	EgressDigFilter  EgressDigestFilter
-	IngressDigFilter IngressDigestFilter
+	Sndr             Sender              // 向远程peer节点发送消息
+	MemSvc           MembershipService   // 获取alive节点的成员信息
+	IdExtractor      IdentifierExtractor // 从SignedGossipMessage中提取一个标识符(identifier)
+	MsgCons          MsgConsumer         // 消费者，处理SignedGossipMessage消息
+	EgressDigFilter  EgressDigestFilter  // 发出消息过滤器
+	IngressDigFilter IngressDigestFilter // 到来消息过滤器
 }
 
 // Mediator is a component wrap a PullEngine and provides the methods
@@ -100,32 +99,31 @@ type PullAdapter struct {
 // given at construction, and also hooks that can be registered for each
 // type of pullMsgType (hello, digest, req, res).
 type Mediator interface {
-	// Stop stop the Mediator
+	// Stop 停止Mediator运行
 	Stop()
 
-	// RegisterMsgHook registers a message hook to a specific type of pull message
+	// RegisterMsgHook 将消息钩子注册到特定类型的pull消息
 	RegisterMsgHook(MsgType, MessageHook)
 
-	// Add adds a GossipMessage to the Mediator
+	// Add 添加一个Gossip消息(GossipMessage)到Mediator
 	Add(*protoext.SignedGossipMessage)
 
-	// Remove removes a GossipMessage from the Mediator with a matching digest,
-	// if such a message exits
+	// Remove 根据消息摘要(digest)从Mediator中移除消息(GossipMessage)
 	Remove(digest string)
 
-	// HandleMessage handles a message from some remote peer
+	// HandleMessage 处理来自某个远程peer的消息
 	HandleMessage(msg protoext.ReceivedMessage)
 }
 
 // pullMediatorImpl is an implementation of Mediator
 type pullMediatorImpl struct {
 	sync.RWMutex
-	*PullAdapter
-	msgType2Hook map[MsgType][]MessageHook
-	config       Config
-	logger       util.Logger
-	itemID2Msg   map[string]*protoext.SignedGossipMessage
-	engine       *algo.PullEngine
+	*PullAdapter                                         // 拉取适配器
+	msgType2Hook map[MsgType][]MessageHook                // <消息类型，对该消息类型所注册的钩子函数>
+	config       Config                                   // 配置文件
+	logger       util.Logger                              // 日志打印
+	itemID2Msg   map[string]*protoext.SignedGossipMessage // <消息摘要，具体消息>
+	engine       *algo.PullEngine                         // 拉取引擎
 }
 
 // NewPullMediator returns a new Mediator
@@ -150,6 +148,7 @@ func NewPullMediator(config Config, adapter *PullAdapter) Mediator {
 		itemID2Msg:   make(map[string]*protoext.SignedGossipMessage),
 	}
 
+	// 初始化拉取引擎
 	p.engine = algo.NewPullEngineWithFilter(p, config.PullInterval, egressDigFilter.byContext(), config.PullEngineConfig)
 
 	if adapter.IngressDigFilter == nil {
@@ -166,6 +165,8 @@ func (p *pullMediatorImpl) HandleMessage(m protoext.ReceivedMessage) {
 	if m.GetGossipMessage() == nil || !protoext.IsPullMsg(m.GetGossipMessage().GossipMessage) {
 		return
 	}
+
+	// 1、若不是配置中指定的消息类型，则直接返回
 	msg := m.GetGossipMessage()
 	msgType := protoext.GetPullMsgType(msg.GossipMessage)
 	if msgType != p.config.MsgType {
@@ -178,19 +179,20 @@ func (p *pullMediatorImpl) HandleMessage(m protoext.ReceivedMessage) {
 	items := []*protoext.SignedGossipMessage{}
 	var pullMsgType MsgType
 
-	if helloMsg := msg.GetHello(); helloMsg != nil {
+	// 2、判断消息类型，并调用相应的处理
+	if helloMsg := msg.GetHello(); helloMsg != nil { // Hello Message
 		pullMsgType = HelloMsgType
 		p.engine.OnHello(helloMsg.Nonce, m)
-	} else if digest := msg.GetDataDig(); digest != nil {
+	} else if digest := msg.GetDataDig(); digest != nil { // Digest Message
 		d := p.PullAdapter.IngressDigFilter(digest)
 		itemIDs = util.BytesToStrings(d.Digests)
 		pullMsgType = DigestMsgType
 		p.engine.OnDigest(itemIDs, d.Nonce, m)
-	} else if req := msg.GetDataReq(); req != nil {
+	} else if req := msg.GetDataReq(); req != nil { // Request Message
 		itemIDs = util.BytesToStrings(req.Digests)
 		pullMsgType = RequestMsgType
 		p.engine.OnReq(itemIDs, req.Nonce, m)
-	} else if res := msg.GetDataUpdate(); res != nil {
+	} else if res := msg.GetDataUpdate(); res != nil { // Response Message
 		itemIDs = make([]string, len(res.Data))
 		items = make([]*protoext.SignedGossipMessage, len(res.Data))
 		pullMsgType = ResponseMsgType
@@ -211,7 +213,7 @@ func (p *pullMediatorImpl) HandleMessage(m protoext.ReceivedMessage) {
 		p.engine.OnRes(itemIDs, res.Nonce)
 	}
 
-	// Invoke hooks for relevant message type
+	// 3、调用相关消息类型的钩子
 	for _, h := range p.hooksByMsgType(pullMsgType) {
 		h(itemIDs, items, m)
 	}
@@ -225,6 +227,7 @@ func (p *pullMediatorImpl) Stop() {
 func (p *pullMediatorImpl) RegisterMsgHook(pullMsgType MsgType, hook MessageHook) {
 	p.Lock()
 	defer p.Unlock()
+	// 此处没有进行判断重复性钩子注册
 	p.msgType2Hook[pullMsgType] = append(p.msgType2Hook[pullMsgType], hook)
 
 }
