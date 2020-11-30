@@ -22,11 +22,11 @@ import (
 
 // certStore supports pull dissemination of identity messages
 type certStore struct {
-	selfIdentity api.PeerIdentityType
-	idMapper     identity.Mapper
-	pull         pull.Mediator
-	logger       util.Logger
-	mcs          api.MessageCryptoService
+	selfIdentity api.PeerIdentityType     // 自身节点证书
+	idMapper     identity.Mapper          //
+	pull         pull.Mediator            // 拉取引擎中介
+	logger       util.Logger              // 日志打印
+	mcs          api.MessageCryptoService // 加解密服务
 }
 
 func newCertStore(puller pull.Mediator, idMapper identity.Mapper, selfIdentity api.PeerIdentityType, mcs api.MessageCryptoService) *certStore {
