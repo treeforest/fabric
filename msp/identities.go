@@ -57,7 +57,7 @@ func newIdentity(cert *x509.Certificate, pk bccsp.Key, msp *bccspmsp) (Identity,
 		mspIdentityLogger.Debugf("Creating identity instance for cert %s", certToPEM(cert))
 	}
 
-	// Sanitize first the certificate
+	// 1、首先对证书消毒=>确保使用ECDSA签署的x509证书确实有Low-S格式的签名
 	cert, err := msp.sanitizeCert(cert)
 	if err != nil {
 		return nil, err
@@ -65,13 +65,13 @@ func newIdentity(cert *x509.Certificate, pk bccsp.Key, msp *bccspmsp) (Identity,
 
 	// Compute identity identifier
 
-	// Use the hash of the identity's certificate as id in the IdentityIdentifier
-	hashOpt, err := bccsp.GetHashOpt(msp.cryptoConfig.IdentityIdentifierHashFunction)
+	// 2、使用身份证书的散列作为IdentityIdentifier中的id
+	hashOpt, err := bccsp.GetHashOpt(msp.cryptoConfig.IdentityIdentifierHashFunction) // 获取与所传递的散列函数对应的hashOpt
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed getting hash function options")
 	}
 
-	digest, err := msp.bccsp.Hash(cert.Raw, hashOpt)
+	digest, err := msp.bccsp.Hash(cert.Raw, hashOpt) // 使用hashOpt对cert.Raw进行哈希计算，获取摘要信息(散列)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed hashing raw certificate to compute the id of the IdentityIdentifier")
 	}

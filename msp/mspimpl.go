@@ -183,13 +183,13 @@ func (msp *bccspmsp) getCertFromPem(idBytes []byte) (*x509.Certificate, error) {
 }
 
 func (msp *bccspmsp) getIdentityFromConf(idBytes []byte) (Identity, bccsp.Key, error) {
-	// get a cert
+	// get a cert 获得证书
 	cert, err := msp.getCertFromPem(idBytes)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// get the public key in the right format
+	// get the public key in the right format 获得正确格式的证书公钥
 	certPubK, err := msp.bccsp.KeyImport(cert, &bccsp.X509PublicKeyImportOpts{Temporary: true})
 	if err != nil {
 		return nil, nil, err
@@ -795,6 +795,7 @@ func (msp *bccspmsp) getCertificationChainIdentifierFromChain(chain []*x509.Cert
 // sanitizeCert ensures that x509 certificates signed using ECDSA
 // do have signatures in Low-S. If this is not the case, the certificate
 // is regenerated to have a Low-S signature.
+// sanitizeCert确保使用ECDSA签署的x509证书确实有Low-S格式的签名。如果不是这样，则重新生成证书，使其具有Low-S签名。
 func (msp *bccspmsp) sanitizeCert(cert *x509.Certificate) (*x509.Certificate, error) {
 	if isECDSASignedCert(cert) {
 		// Lookup for a parent certificate to perform the sanitization

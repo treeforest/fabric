@@ -87,13 +87,14 @@ func (s *MSPMessageCryptoService) ValidateIdentity(peerIdentity api.PeerIdentity
 // This method does not validate peerIdentity.
 // This validation is supposed to be done appropriately during the execution flow.
 func (s *MSPMessageCryptoService) GetPKIidOfCert(peerIdentity api.PeerIdentityType) common.PKIidType {
-	// Validate arguments
+	// 检查参数
 	if len(peerIdentity) == 0 {
 		mcsLogger.Error("Invalid Peer Identity. It must be different from nil.")
 
 		return nil
 	}
 
+	// 对peerIdentity进行反序列化
 	sid, err := s.deserializer.Deserialize(peerIdentity)
 	if err != nil {
 		mcsLogger.Errorf("Failed getting validated identity from peer identity %s: [%s]", peerIdentity, err)
@@ -104,11 +105,12 @@ func (s *MSPMessageCryptoService) GetPKIidOfCert(peerIdentity api.PeerIdentityTy
 	// concatenate msp-id and idbytes
 	// idbytes is the low-level representation of an identity.
 	// it is supposed to be already in its minimal representation
-
+	// idbytes 是 identity 的 low-level 表示
 	mspIDRaw := []byte(sid.Mspid)
+	// 连接 mspid 和 sid.IdBytes
 	raw := append(mspIDRaw, sid.IdBytes...)
 
-	// Hash
+	// 对raw进行哈希计算得到摘要
 	digest, err := s.hasher.Hash(raw, &bccsp.SHA256Opts{})
 	if err != nil {
 		mcsLogger.Errorf("Failed computing digest of serialized identity %s: [%s]", peerIdentity, err)

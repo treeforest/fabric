@@ -26,31 +26,28 @@ var (
 // Mapper holds mappings between pkiID
 // to certificates(identities) of peers
 type Mapper interface {
-	// Put associates an identity to its given pkiID, and returns an error
-	// in case the given pkiID doesn't match the identity
+	// Put 把pkiID与identity关联，若pkiID不匹配identity，则返回错误
 	Put(pkiID common.PKIidType, identity api.PeerIdentityType) error
 
-	// Get returns the identity of a given pkiID, or error if such an identity
-	// isn't found
+	// Get 返回给定pkiID的identity，如果identity不存在，则返回错误
 	Get(pkiID common.PKIidType) (api.PeerIdentityType, error)
 
-	// Sign signs a message, returns a signed message on success
-	// or an error on failure
+	// Sign 对消息进行签名，成功时返回已签名的消息，失败时返回错误
 	Sign(msg []byte) ([]byte, error)
 
-	// Verify verifies a signed message
+	// Verify 验证已签名的消息
 	Verify(vkID, signature, message []byte) error
 
-	// GetPKIidOfCert returns the PKI-ID of a certificate
+	// GetPKIidOfCert 返回证书的pkiID
 	GetPKIidOfCert(api.PeerIdentityType) common.PKIidType
 
-	// SuspectPeers re-validates all peers that match the given predicate
+	// SuspectPeers 重新验证与给定的谓词匹配的所有peers
 	SuspectPeers(isSuspected api.PeerSuspector)
 
-	// IdentityInfo returns information known peer identities
+	// IdentityInfo 返回已知的peer身份信息集
 	IdentityInfo() api.PeerIdentitySet
 
-	// Stop stops all background computations of the Mapper
+	// Stop 停止映射器
 	Stop()
 }
 
@@ -58,14 +55,14 @@ type purgeTrigger func(pkiID common.PKIidType, identity api.PeerIdentityType)
 
 // identityMapperImpl is a struct that implements Mapper
 type identityMapperImpl struct {
-	onPurge    purgeTrigger
-	mcs        api.MessageCryptoService
-	sa         api.SecurityAdvisor
-	pkiID2Cert map[string]*storedIdentity
+	onPurge    purgeTrigger               // 清除触发器
+	mcs        api.MessageCryptoService   // 消息加密服务接口
+	sa         api.SecurityAdvisor        // 安全顾问接口
+	pkiID2Cert map[string]*storedIdentity // pkiID和identity映射集合
 	sync.RWMutex
 	stopChan  chan struct{}
 	once      sync.Once
-	selfPKIID string
+	selfPKIID string // 自身pkiID
 }
 
 // NewIdentityMapper method, all we need is a reference to a MessageCryptoService
@@ -110,15 +107,18 @@ func (is *identityMapperImpl) Put(pkiID common.PKIidType, identity api.PeerIdent
 		return errors.New("identity is nil")
 	}
 
+	// 使用mcs获取identity过期日期
 	expirationDate, err := is.mcs.Expiration(identity)
 	if err != nil {
 		return errors.Wrap(err, "failed classifying identity")
 	}
 
+	// 使用mcs验证identity
 	if err := is.mcs.ValidateIdentity(identity); err != nil {
 		return err
 	}
 
+	// 获取identity对应的id
 	id := is.mcs.GetPKIidOfCert(identity)
 	if !bytes.Equal(pkiID, id) {
 		return errors.New("identity doesn't match the computed pkiID")
@@ -126,24 +126,25 @@ func (is *identityMapperImpl) Put(pkiID common.PKIidType, identity api.PeerIdent
 
 	is.Lock()
 	defer is.Unlock()
-	// Check if identity already exists.
-	// If so, no need to overwrite it.
+	// 检查pkiID是否已经存在
 	if _, exists := is.pkiID2Cert[string(pkiID)]; exists {
 		return nil
 	}
 
 	var expirationTimer *time.Timer
 	if !expirationDate.IsZero() {
+		// 是否过期
 		if time.Now().After(expirationDate) {
 			return errors.New("identity expired")
 		}
-		// Identity would be wiped out a millisecond after its expiration date
+		// identity将在其过期日期后一毫秒被清除
 		timeToLive := time.Until(expirationDate.Add(time.Millisecond))
 		expirationTimer = time.AfterFunc(timeToLive, func() {
 			is.delete(pkiID, identity)
 		})
 	}
 
+	// 保存到集合中
 	is.pkiID2Cert[string(id)] = newStoredIdentity(pkiID, identity, expirationTimer, is.sa.OrgByPeerIdentity(identity))
 	return nil
 }
@@ -240,11 +241,11 @@ func (is *identityMapperImpl) delete(pkiID common.PKIidType, identity api.PeerId
 }
 
 type storedIdentity struct {
-	pkiID           common.PKIidType
-	lastAccessTime  int64
-	peerIdentity    api.PeerIdentityType
-	orgId           api.OrgIdentityType
-	expirationTimer *time.Timer
+	pkiID           common.PKIidType     // pkiID
+	lastAccessTime  int64                // 最近访问identity的时间
+	peerIdentity    api.PeerIdentityType // 节点的标识identity
+	orgId           api.OrgIdentityType  // 组织的标识
+	expirationTimer *time.Timer          // 过期定时器
 }
 
 func newStoredIdentity(pkiID common.PKIidType, identity api.PeerIdentityType, expirationTimer *time.Timer, org api.OrgIdentityType) *storedIdentity {
