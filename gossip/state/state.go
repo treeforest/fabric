@@ -33,6 +33,8 @@ import (
 // GossipStateProvider is the interface to acquire sequences of the ledger blocks
 // capable to full fill missing blocks by running state replication and
 // sending request to get missing block to other nodes
+// GossipStateProvider 是获取账本区块序列的接口。
+// 通过运行状态复制以及向其他节点发送请求获取缺失的块，以此确保能够完全填补缺失的块。
 type GossipStateProvider interface {
 	AddPayload(payload *proto.Payload) error
 
